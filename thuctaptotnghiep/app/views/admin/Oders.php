@@ -1,47 +1,60 @@
-<?php
-// public/admin/orders.php
-declare(strict_types=1);
-require_once __DIR__ . '/../../app/controllers/OrderController.php';
-require_once __DIR__ . '/../../app/controllers/AdminController.php';
-AdminController::requireAdmin();
+<?php /** @var array $orders */ ?>
+<h2>Quản lý đơn hàng</h2>
 
-$orders = OrderController::listOrdersForAdmin();
-?>
-<section class="admin-orders wrap">
-  <h2>Quản lý đơn</h2>
-  <table class="admin-table">
-    <thead><tr><th>ID</th><th>Mã</th><th>Khách</th><th>Ngày</th><th>Trạng thái</th><th>Tổng</th><th>Hành động</th></tr></thead>
-    <tbody>
-    <?php foreach($orders as $o):
-        // get user email/name
-        $u = null;
-        try {
-            $st = db()->prepare("SELECT name,email FROM users WHERE id=? LIMIT 1");
-            $st->execute([$o['user_id']]);
-            $u = $st->fetch(PDO::FETCH_ASSOC) ?: null;
-        } catch (Throwable $e) { $u = null; }
-    ?>
-      <tr>
-        <td><?= (int)$o['id'] ?></td>
-        <td><a href="/order?code=<?= e($o['code']) ?>"><?= e($o['code']) ?></a></td>
-        <td><?= e($u['name'] ?? $u['email'] ?? '—') ?></td>
-        <td><?= e($o['created_at']) ?></td>
-        <td><?= e($o['status']) ?></td>
-        <td><?= money($o['total']) ?></td>
-        <td>
-          <form method="post" style="display:flex;gap:.4rem">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="id" value="<?= (int)$o['id'] ?>">
-            <select name="status">
-              <?php foreach(['Pending','Processing','Shipped','Completed','Cancelled'] as $s): ?>
-                <option value="<?= e($s) ?>" <?= $s === $o['status'] ? 'selected' : '' ?>><?= e($s) ?></option>
-              <?php endforeach; ?>
-            </select>
-            <button class="btn">Cập nhật</button>
-          </form>
-        </td>
-      </tr>
+<form method="get" action="">
+    <input type="hidden" name="c" value="admin">
+    <input type="hidden" name="a" value="orders">
+    <label>Lọc trạng thái:
+        <select name="status" onchange="this.form.submit()">
+            <option value="">(Tất cả)</option>
+            <?php
+            $statuses = ['Pending','Processing','Shipped','Completed','Cancelled'];
+            foreach ($statuses as $st):
+            ?>
+                <option value="<?= $st ?>" <?= (($_GET['status'] ?? '') === $st) ? 'selected' : '' ?>>
+                    <?= $st ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </label>
+</form>
+
+<table border="1" cellpadding="5">
+    <tr>
+        <th>ID</th>
+        <th>Mã</th>
+        <th>Người dùng</th>
+        <th>Tổng tiền</th>
+        <th>Trạng thái</th>
+        <th>Ngày tạo</th>
+        <th>Hành động</th>
+    </tr>
+    <?php foreach ($orders as $o): ?>
+        <tr>
+            <td><?= (int)$o['id'] ?></td>
+            <td><?= e($o['code']) ?></td>
+            <td><?= (int)$o['user_id'] ?></td>
+            <td><?= number_format($o['total'], 0, ',', '.') ?> đ</td>
+            <td><?= e($o['status']) ?></td>
+            <td><?= e($o['created_at']) ?></td>
+            <td>
+                <a href="<?= base_url('index.php?c=order&a=detail&id='.$o['id']) ?>" target="_blank">
+                    Xem
+                </a>
+                <form method="post" action="<?= base_url('index.php?c=admin&a=updateOrderStatus') ?>"
+                      style="display:inline">
+                    <input type="hidden" name="_token" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="id" value="<?= $o['id'] ?>">
+                    <select name="status">
+                        <?php foreach (['Pending','Processing','Shipped','Completed','Cancelled'] as $st): ?>
+                            <option value="<?= $st ?>" <?= $o['status'] === $st ? 'selected' : '' ?>>
+                                <?= $st ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit">Cập nhật</button>
+                </form>
+            </td>
+        </tr>
     <?php endforeach; ?>
-    </tbody>
-  </table>
-</section>
+</table>

@@ -1,29 +1,32 @@
-<?php
-// public/admin/books.php
-declare(strict_types=1);
-require_once __DIR__ . '/../../app/controllers/AdminController.php';
-AdminController::requireAdmin();
+<?php /** @var array $books */ ?>
+<h2>Quản lý sách</h2>
 
-$books = [];
-try {
-    $books = db()->query("SELECT id,title,price,stock_qty FROM books ORDER BY id DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) { $books = []; }
-?>
-<section class="admin-books wrap">
-  <h2>Quản lý Sách</h2>
-  <p><a class="btn" href="/admin?p=books&action=create">Thêm sách mới</a></p>
-  <table class="admin-table">
-    <thead><tr><th>ID</th><th>Tiêu đề</th><th>Giá</th><th>Tồn</th><th></th></tr></thead>
-    <tbody>
-    <?php foreach($books as $b): ?>
-      <tr>
-        <td><?= (int)$b['id'] ?></td>
-        <td><?= e($b['title']) ?></td>
-        <td><?= money($b['price']) ?></td>
-        <td><?= (int)$b['stock_qty'] ?></td>
-        <td><a class="btn" href="/admin?p=books&action=edit&id=<?= (int)$b['id'] ?>">Sửa</a></td>
-      </tr>
+<p><a href="<?= base_url('index.php?c=admin&a=bookForm') ?>">+ Thêm sách</a></p>
+
+<table border="1" cellpadding="5">
+    <tr>
+        <th>ID</th>
+        <th>Tiêu đề</th>
+        <th>Giá</th>
+        <th>Tồn kho</th>
+        <th>Hành động</th>
+    </tr>
+    <?php foreach ($books as $b): ?>
+        <tr>
+            <td><?= (int)$b['id'] ?></td>
+            <td><?= e($b['title']) ?></td>
+            <td><?= number_format($b['price'], 0, ',', '.') ?> đ</td>
+            <td><?= (int)$b['stock_qty'] ?></td>
+            <td>
+                <a href="<?= base_url('index.php?c=admin&a=bookForm&id='.$b['id']) ?>">Sửa</a>
+                <form method="post" action="<?= base_url('index.php?c=admin&a=bookDelete') ?>"
+                      style="display:inline"
+                      onsubmit="return confirm('Xóa sách này?')">
+                    <input type="hidden" name="_token" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="id" value="<?= $b['id'] ?>">
+                    <button type="submit">Xóa</button>
+                </form>
+            </td>
+        </tr>
     <?php endforeach; ?>
-    </tbody>
-  </table>
-</section>
+</table>

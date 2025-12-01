@@ -1,18 +1,22 @@
 <?php
+// app/config.php
 
-$servername = "localhost";
-$username   = "root";
-$password   = "Ai1000!";
-$dbname     = "thuctaptotnghiep";
+// ==== CONFIG DB ====
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'thuctaptotnghiep');
+define('DB_USER', 'root');
+define('DB_PASS', 'Ai1000!');
 
-$conn = mysqli_connect($servername, $username, $password, $dbname);
+// BASE_URL: đường dẫn tới thư mục public trên web server
+// VD: nếu truy cập là http://localhost/bookstore/public/index.php
+// thì BASE_URL là '/bookstore/public'
+define('BASE_URL', '/thuctaptotnghiep/public');
 
-if (!$conn) {
-    die(" Kết nối thất bại: " . mysqli_connect_error());
+// ==== PATHS ====
+define('APP_PATH', dirname(__DIR__) . '/app');
+define('VIEW_PATH', APP_PATH . '/views');
+
+// Bật session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
 }
-
-if (!mysqli_set_charset($conn, "utf8mb4")) {
-    die(" Không thể thiết lập charset: " . mysqli_error($conn));
-}
-
-?>

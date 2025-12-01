@@ -1,29 +1,38 @@
 <?php
-// public/admin/dashboard.php
-declare(strict_types=1);
-require_once __DIR__ . '/../../app/controllers/AdminController.php';
-AdminController::requireAdmin();
-$stats = AdminController::getStats();
+/** @var array $stats */
 ?>
-<section class="admin-dashboard wrap">
-  <h2>Admin Dashboard</h2>
-  <div class="admin-cards">
-    <div class="card">Tổng đơn: <b><?= (int)($stats['totOrders'] ?? 0) ?></b></div>
-    <div class="card">Đơn chờ: <b><?= (int)($stats['pending'] ?? 0) ?></b></div>
-    <div class="card">Doanh thu: <b><?= money($stats['revenue'] ?? 0) ?></b></div>
-  </div>
+<h2>Admin Dashboard</h2>
 
-  <h3>Top sách bán chạy</h3>
-  <ul>
-    <?php foreach($stats['topBooks'] ?? [] as $b): ?>
-      <li><?= e($b['title_snapshot']) ?> — <?= (int)$b['sold'] ?> bán</li>
-    <?php endforeach; ?>
-  </ul>
+<ul>
+    <li>Tổng số đơn: <?= (int)$stats['totOrders'] ?></li>
+    <li>Đơn Pending: <?= (int)$stats['pending'] ?></li>
+    <li>Doanh thu (Completed): <?= number_format($stats['revenue'], 0, ',', '.') ?> đ</li>
+</ul>
 
-  <h3>Tồn kho thấp</h3>
-  <ul>
-    <?php foreach($stats['lowStock'] ?? [] as $s): ?>
-      <li><?= e($s['title']) ?> — <?= (int)$s['stock_qty'] ?> còn</li>
+<h3>Top sách bán chạy</h3>
+<table border="1" cellpadding="5">
+    <tr>
+        <th>Tên sách</th>
+        <th>Số lượng bán</th>
+    </tr>
+    <?php foreach ($stats['topBooks'] as $b): ?>
+        <tr>
+            <td><?= e($b['title_snapshot']) ?></td>
+            <td><?= (int)$b['sold_qty'] ?></td>
+        </tr>
     <?php endforeach; ?>
-  </ul>
-</section>
+</table>
+
+<h3>Sách sắp hết hàng (≤5)</h3>
+<table border="1" cellpadding="5">
+    <tr>
+        <th>Tên sách</th>
+        <th>Tồn kho</th>
+    </tr>
+    <?php foreach ($stats['lowStock'] as $b): ?>
+        <tr>
+            <td><?= e($b['title']) ?></td>
+            <td><?= (int)$b['stock_qty'] ?></td>
+        </tr>
+    <?php endforeach; ?>
+</table>

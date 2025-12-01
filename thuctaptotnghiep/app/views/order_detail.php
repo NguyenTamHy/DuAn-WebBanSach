@@ -1,37 +1,36 @@
 <?php
-// public/order_detail.php
-declare(strict_types=1);
-require_once __DIR__ . '/../app/helpers.php';
-
-if (!isset($order)) {
-    echo "<main class='wrap'><h2>Đơn không tồn tại</h2></main>";
-    return;
-}
-$addr = json_decode($order['addr_json'] ?? '{}', true) ?: [];
+/** @var array $order */
+/** @var array $items */
+/** @var array $addr */
 ?>
-<section class="wrap">
-  <h2>Đơn hàng <?= e($order['code']) ?></h2>
-  <p>Trạng thái: <strong><?= e($order['status']) ?></strong> • Ngày: <?= e($order['created_at']) ?></p>
-  <h3>Thông tin giao hàng</h3>
-  <p><?= nl2br(e($addr['line1'] ?? '')) ?> <br> SĐT: <?= e($addr['phone'] ?? '') ?></p>
+<h2>Chi tiết đơn hàng #<?= e($order['code']) ?></h2>
 
-  <h3>Chi tiết đơn</h3>
-  <table class="cart-table">
-    <thead><tr><th>Sách</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
-    <tbody>
-    <?php foreach($order_items as $it): ?>
-      <tr>
-        <td><?= e($it['title_snapshot']) ?></td>
-        <td><?= (int)$it['qty'] ?></td>
-        <td><?= money($it['unit_price']) ?></td>
-        <td><?= money($it['line_total']) ?></td>
-      </tr>
+<p>Trạng thái: <?= e($order['status']) ?></p>
+<p>Ngày tạo: <?= e($order['created_at']) ?></p>
+
+<h3>Thông tin giao hàng</h3>
+<p><?= e($addr['name'] ?? '') ?> - <?= e($addr['phone'] ?? '') ?></p>
+<p><?= nl2br(e($addr['address'] ?? '')) ?></p>
+
+<h3>Sản phẩm</h3>
+<table border="1" cellpadding="5">
+    <tr>
+        <th>Sách</th>
+        <th>Số lượng</th>
+        <th>Đơn giá</th>
+        <th>Thành tiền</th>
+    </tr>
+    <?php foreach ($items as $it): ?>
+        <tr>
+            <td><?= e($it['title_snapshot']) ?></td>
+            <td><?= (int)$it['qty'] ?></td>
+            <td><?= number_format($it['unit_price'], 0, ',', '.') ?> đ</td>
+            <td><?= number_format($it['line_total'], 0, ',', '.') ?> đ</td>
+        </tr>
     <?php endforeach; ?>
-    </tbody>
-  </table>
+</table>
 
-  <p>Tạm tính: <?= money($order['subtotal']) ?></p>
-  <p>Giảm: <?= money($order['discount']) ?></p>
-  <p>Phí vận chuyển: <?= money($order['shipping_fee']) ?></p>
-  <h3>Tổng: <?= money($order['total']) ?></h3>
-</section>
+<p>Tạm tính: <?= number_format($order['subtotal'], 0, ',', '.') ?> đ</p>
+<p>Giảm giá: <?= number_format($order['discount'], 0, ',', '.') ?> đ</p>
+<p>Phí ship: <?= number_format($order['shipping_fee'], 0, ',', '.') ?> đ</p>
+<p><strong>Tổng cộng: <?= number_format($order['total'], 0, ',', '.') ?> đ</strong></p>

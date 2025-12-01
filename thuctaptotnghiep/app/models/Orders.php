@@ -1,99 +1,161 @@
 <?php
 // app/models/Order.php
-declare(strict_types=1);
 
-if (!class_exists('OrderModel')) {
-    class OrderModel
+require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/AuditLog.php';
+
+class Order
+{
+    public static function create(int $user_id, array $cart, array $checkoutData): int
     {
-        // Create order (atomic)
-        public static function create(int $userId, array $addr, array $items, array $totals): array
-        {
-            $pdo = db();
-            $code = 'ORD' . strtoupper(bin2hex(random_bytes(4)));
-            try {
-                $pdo->beginTransaction();
-                $st = $pdo->prepare("INSERT INTO orders (code, user_id, addr_json, subtotal, discount, shipping_fee, total, status, payment_method) VALUES (?,?,?,?,?,?,?,?,?)");
-                $st->execute([
-                    $code,
-                    $userId,
-                    json_encode($addr, JSON_UNESCAPED_UNICODE),
-                    $totals['subtotal'] ?? 0,
-                    $totals['discount'] ?? 0,
-                    $totals['shipping'] ?? 0,
-                    $totals['total'] ?? 0,
-                    'Pending',
-                    $totals['payment_method'] ?? 'COD'
+        $pdo = db();
+        $pdo->beginTransaction();
+
+        try {
+            $subtotal = (float)$cart['subtotal'];
+            $discount = (float)($checkoutData['discount'] ?? 0);
+            $shipping_fee = (float)($checkoutData['shipping_fee'] ?? 0);
+            $total = max(0, $subtotal - $discount + $shipping_fee);
+
+            $addr = [
+                'name'    => $checkoutData['name'],
+                'phone'   => $checkoutData['phone'],
+                'address' => $checkoutData['address'],
+            ];
+
+            $code = 'OD' . time() . rand(100, 999);
+
+            $stmt = $pdo->prepare("
+                INSERT INTO orders (code, user_id, addr_json, subtotal, discount, shipping_fee, total, payment_method, status)
+                VALUES (:code, :user_id, :addr_json, :subtotal, :discount, :shipping_fee, :total, :payment_method, 'Pending')
+            ");
+            $stmt->execute([
+                ':code'           => $code,
+                ':user_id'        => $user_id,
+                ':addr_json'      => json_encode($addr, JSON_UNESCAPED_UNICODE),
+                ':subtotal'       => $subtotal,
+                ':discount'       => $discount,
+                ':shipping_fee'   => $shipping_fee,
+                ':total'          => $total,
+                ':payment_method' => $checkoutData['payment_method'] ?? 'COD',
+            ]);
+
+            $order_id = (int)$pdo->lastInsertId();
+
+            $stmtItem = $pdo->prepare("
+                INSERT INTO order_items (order_id, book_id, title_snapshot, qty, unit_price, line_total)
+                VALUES (:order_id, :book_id, :title_snapshot, :qty, :unit_price, :line_total)
+            ");
+
+            foreach ($cart['lines'] as $line) {
+                $book = $line['book'];
+                $qty  = (int)$line['qty'];
+                $stmtItem->execute([
+                    ':order_id'       => $order_id,
+                    ':book_id'        => $book['id'],
+                    ':title_snapshot' => $book['title'],
+                    ':qty'            => $qty,
+                    ':unit_price'     => $book['price'],
+                    ':line_total'     => $line['line_total'],
                 ]);
-                $orderId = (int)$pdo->lastInsertId();
 
-                $stmtItem = $pdo->prepare("INSERT INTO order_items (order_id, book_id, title_snapshot, qty, unit_price, line_total) VALUES (?,?,?,?,?,?)");
-                foreach ($items as $it) {
-                    $qty = (int)($it['qty'] ?? 1);
-                    $unit = (float)($it['price'] ?? $it['unit_price'] ?? 0);
-                    $title = (string)($it['title'] ?? '');
-                    $line_total = $qty * $unit;
-                    $stmtItem->execute([$orderId, $it['id'] ?? null, $title, $qty, $unit, $line_total]);
-                }
-
-                // audit log
-                try {
-                    $alog = db()->prepare("INSERT INTO audit_logs (actor_id, action, entity, entity_id, payload_json) VALUES (?,?,?,?,?)");
-                    $alog->execute([
-                        $userId,
-                        'create_order',
-                        'orders',
-                        $orderId,
-                        json_encode(['totals'=>$totals,'items'=>$items], JSON_UNESCAPED_UNICODE)
-                    ]);
-                } catch (Throwable $e) { /* ignore audit failure */ }
-
-                $pdo->commit();
-                return ['id'=>$orderId, 'code'=>$code];
-            } catch (Throwable $e) {
-                if ($pdo->inTransaction()) $pdo->rollBack();
-                throw $e;
+                $stmtStock = $pdo->prepare("UPDATE books SET stock_qty = stock_qty - ? WHERE id = ?");
+                $stmtStock->execute([$qty, $book['id']]);
             }
-        }
 
-        public static function findByCodeForUser(string $code, int $userId): ?array
-        {
-            $st = db()->prepare("SELECT * FROM orders WHERE code=? AND user_id=? LIMIT 1");
-            $st->execute([$code, $userId]);
-            $r = $st->fetch(PDO::FETCH_ASSOC);
-            return $r ?: null;
-        }
+            AuditLog::log($user_id, 'create_order', 'orders', $order_id, [
+                'subtotal' => $subtotal,
+                'discount' => $discount,
+                'shipping' => $shipping_fee,
+                'total'    => $total,
+            ]);
 
-        public static function itemsOf(int $orderId): array
-        {
-            $st = db()->prepare("SELECT * FROM order_items WHERE order_id=?");
-            $st->execute([$orderId]);
-            return $st->fetchAll(PDO::FETCH_ASSOC);
-        }
+            $pdo->commit();
+            return $order_id;
 
-        public static function listAll(int $limit = 200): array
-        {
-            $st = db()->prepare("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?");
-            $st->bindValue(1, $limit, PDO::PARAM_INT);
-            $st->execute();
-            return $st->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            throw $e;
         }
+    }
 
-        public static function updateStatus(int $id, string $status): void
-        {
-            $st = db()->prepare("UPDATE orders SET status=? WHERE id=?");
-            $st->execute([$status, $id]);
+    public static function find(int $id)
+    {
+        $stmt = db()->prepare("SELECT * FROM orders WHERE id = ?");
+        $stmt->execute([$id]);
+        return $stmt->fetch();
+    }
 
-            // audit
-            try {
-                $ulog = db()->prepare("INSERT INTO audit_logs (actor_id, action, entity, entity_id, payload_json) VALUES (?,?,?,?,?)");
-                $ulog->execute([
-                    user()['id'] ?? null,
-                    'update_order_status',
-                    'orders',
-                    $id,
-                    json_encode(['status'=>$status], JSON_UNESCAPED_UNICODE)
-                ]);
-            } catch (Throwable $e) {}
+    public static function items(int $order_id)
+    {
+        $stmt = db()->prepare("
+            SELECT oi.*, b.cover_url
+            FROM order_items oi
+            LEFT JOIN books b ON b.id = oi.book_id
+            WHERE oi.order_id = ?
+        ");
+        $stmt->execute([$order_id]);
+        return $stmt->fetchAll();
+    }
+
+    public static function forUser(int $user_id)
+    {
+        $stmt = db()->prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC");
+        $stmt->execute([$user_id]);
+        return $stmt->fetchAll();
+    }
+
+    public static function all(?string $status = null): array
+    {
+        if ($status) {
+            $stmt = db()->prepare("SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC");
+            $stmt->execute([$status]);
+        } else {
+            $stmt = db()->query("SELECT * FROM orders ORDER BY created_at DESC");
         }
+        return $stmt->fetchAll();
+    }
+
+    public static function updateStatus(int $order_id, string $status, int $admin_id): bool
+    {
+        $allowed = ['Pending', 'Processing', 'Shipped', 'Completed', 'Cancelled'];
+        if (!in_array($status, $allowed, true)) return false;
+
+        $stmt = db()->prepare("UPDATE orders SET status = ? WHERE id = ?");
+        $ok = $stmt->execute([$status, $order_id]);
+
+        if ($ok) {
+            AuditLog::log($admin_id, 'update_status', 'orders', $order_id, ['status' => $status]);
+        }
+        return $ok;
+    }
+
+    public static function getStats(): array
+    {
+        $pdo = db();
+
+        $totOrders = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
+        $pending   = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'Pending'")->fetchColumn();
+        $revenue   = (float)$pdo->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE status = 'Completed'")->fetchColumn();
+
+        $sqlTop = "
+            SELECT oi.book_id, oi.title_snapshot, SUM(oi.qty) AS sold_qty
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id AND o.status IN ('Completed','Shipped')
+            GROUP BY oi.book_id, oi.title_snapshot
+            ORDER BY sold_qty DESC
+            LIMIT 5
+        ";
+        $topBooks = $pdo->query($sqlTop)->fetchAll();
+
+        $lowStock = $pdo->query("
+            SELECT id, title, stock_qty
+            FROM books
+            WHERE stock_qty <= 5
+            ORDER BY stock_qty ASC
+            LIMIT 10
+        ")->fetchAll();
+
+        return compact('totOrders', 'pending', 'revenue', 'topBooks', 'lowStock');
     }
 }
